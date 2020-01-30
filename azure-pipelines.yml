@@ -5,7 +5,7 @@ trigger:
     - releases/*
   paths:
     include:
-    - src/Extensions/Caching/*
+    - src/*
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -25,10 +25,19 @@ steps:
     packagesToPack: 'src/Darkflame.Extensions.Caching.csproj'
     includesymbols: true
     includesource: true
-    versioningScheme: 'byPrereleaseNumber'
-    majorVersion: '1'
-    minorVersion: '0'
-    patchVersion: '0'
+    versioningScheme: 'off'
+    buildProperties: 'VersionSuffix="$(Build.BuildNumber)"'
+  condition: and(succeeded(), eq(variables['build.sourceBranch'], 'refs/heads/master'))
+
+- task: DotNetCoreCLI@2
+  displayName: 'dotnet pack'
+  inputs:
+    command: 'pack'
+    packagesToPack: 'src/Darkflame.Extensions.Caching.csproj'
+    includesymbols: true
+    includesource: true
+    versioningScheme: 'off'
+  condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/tags/'))
 
 - task: NuGetCommand@2
   displayName: 'NuGet push'

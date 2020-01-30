@@ -6,6 +6,7 @@
     <RepositoryUrl>https://github.com/darkflame0/Extensions.Caching</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Nullable>enable</Nullable>
+    <VersionPrefix>1.0.0-preview1</VersionPrefix>
   </PropertyGroup>
   
   
