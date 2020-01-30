@@ -5,6 +5,7 @@
     <Authors>Darkflame</Authors>
     <RepositoryUrl>https://github.com/darkflame0/Extensions.Caching</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
   
   

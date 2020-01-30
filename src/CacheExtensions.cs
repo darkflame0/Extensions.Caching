@@ -14,7 +14,7 @@ namespace Microsoft.Extensions.Caching.Distributed
             var str = cache.GetString(key);
             if (str == null)
             {
-                return default;
+                return default!;
             }
             try
             {
@@ -27,7 +27,7 @@ namespace Microsoft.Extensions.Caching.Distributed
             }
             catch (JsonSerializationException)
             {
-                return default;
+                return default!;
             }
         }
         public static async Task<TItem> GetAsync<TItem>(this IDistributedCache cache, string key, CancellationToken token = default)
@@ -35,7 +35,7 @@ namespace Microsoft.Extensions.Caching.Distributed
             var str = await cache.GetStringAsync(key, token).ConfigureAwait(false);
             if (str == null)
             {
-                return default;
+                return default!;
             }
             try
             {
@@ -47,7 +47,7 @@ namespace Microsoft.Extensions.Caching.Distributed
             }
             catch (JsonSerializationException)
             {
-                return default;
+                return default!;
             }
         }
         public static TItem GetOrCreate<TItem>(this IDistributedCache cache, string key, Func<DistributedCacheEntryOptions, TItem> factory)
