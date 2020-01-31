@@ -1,133 +1,61 @@
 ﻿using System;
-using Newtonsoft.Json;
+using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Runtime.CompilerServices;
 
-namespace Microsoft.Extensions.Caching.Distributed
+namespace Microsoft.Extensions.Caching.Memory
 {
     public static class CacheExtensions
     {
-        static readonly JsonSerializerSettings _settings = new JsonSerializerSettings() { MissingMemberHandling = MissingMemberHandling.Error };
-        public static TItem Get<TItem>(this IDistributedCache cache, string key)
+        static private readonly SemaphoreSlim Sem = new SemaphoreSlim(1, 1);
+        public async static Task<TItem> GetOrCreateAtomicAsync<TItem>(this IMemoryCache cache, object key, Func<ICacheEntry, Task<TItem>> factory)
         {
-            var str = cache.GetString(key);
-            if (str == null)
+            AsyncLazy<TItem> item;
+            await Sem.WaitAsync().ConfigureAwait(false);
+            try
             {
-                return default!;
+                item = cache.GetOrCreate(key, e =>
+                    new AsyncLazy<TItem>(() => factory(e))
+                );
+            }
+            finally
+            {
+                Sem.Release();
             }
             try
             {
-                if(typeof(TItem).IsTuple())
-                {
-                    return JsonConvert.DeserializeObject<TItem>(str, _settings);
-                }
-                return JsonConvert.DeserializeObject<TItem>(str);
-
+                return await item.Value.ConfigureAwait(false);
             }
-            catch (JsonSerializationException)
+            catch
             {
-                return default!;
+                cache.Remove(key);
+                throw;
             }
         }
-        public static async Task<TItem> GetAsync<TItem>(this IDistributedCache cache, string key, CancellationToken token = default)
+        public static TItem GetOrCreateAtomic<TItem>(this IMemoryCache cache, object key, Func<ICacheEntry, TItem> factory)
         {
-            var str = await cache.GetStringAsync(key, token).ConfigureAwait(false);
-            if (str == null)
+            Lazy<TItem> item;
+            Sem.Wait();
+            try
             {
-                return default!;
+                item = cache.GetOrCreate(key, e =>
+                    new Lazy<TItem>(() => factory(e))
+                );
+            }
+            finally
+            {
+                Sem.Release();
             }
             try
             {
-                if (typeof(TItem).IsTuple())
-                {
-                    return JsonConvert.DeserializeObject<TItem>(str, _settings);
-                }
-                return JsonConvert.DeserializeObject<TItem>(str);
+                return item.Value;
             }
-            catch (JsonSerializationException)
+            catch
             {
-                return default!;
+                cache.Remove(key);
+                throw;
             }
-        }
-        public static TItem GetOrCreate<TItem>(this IDistributedCache cache, string key, Func<DistributedCacheEntryOptions, TItem> factory)
-        {
-            TItem Create()
-            {
-                var item = factory(new DistributedCacheEntryOptions());
-                cache.Set(key, item);
-                return item;
-            }
-            var str = cache.GetString(key);
-            if (str == null)
-            {
-                return Create();
-            }
-            try
-            {
-                if (typeof(TItem).IsTuple())
-                {
-                    return JsonConvert.DeserializeObject<TItem>(str, _settings);
-                }
-                return JsonConvert.DeserializeObject<TItem>(str);
-            }
-            catch (JsonSerializationException)
-            {
-                return Create();
-            }
-        }
-        public static async Task<TItem> GetOrCreateAsync<TItem>(this IDistributedCache cache, string key, Func<DistributedCacheEntryOptions, Task<TItem>> factory, CancellationToken token = default)
-        {
-            async Task<TItem> CreateAsync()
-            {
-                var op = new DistributedCacheEntryOptions();
-                var item = await factory(op);
-                _ = cache.SetAsync(key, item, op, token);
-                return item;
-            }
-            var str = await cache.GetStringAsync(key).ConfigureAwait(false);
-            if (str == null)
-            {
-                return await CreateAsync().ConfigureAwait(false);
-            }
-            try
-            {
-                if (typeof(TItem).IsTuple())
-                {
-                    return JsonConvert.DeserializeObject<TItem>(str, _settings);
-                }
-                return JsonConvert.DeserializeObject<TItem>(str);
-            }
-            catch (JsonSerializationException)
-            {
-                return await CreateAsync();
-            }
-        }
-        public static void Set<TItem>(this IDistributedCache cache, string key, TItem value)
-        {
-            cache.Set(key, value, new DistributedCacheEntryOptions());
-        }
-        public static void Set<TItem>(this IDistributedCache cache, string key, TItem value, DateTimeOffset absoluteExpiration)
-        {
-            cache.Set(key, value, new DistributedCacheEntryOptions() { AbsoluteExpiration = absoluteExpiration });
-        }
-        public static void Set<TItem>(this IDistributedCache cache, string key, TItem value, TimeSpan absoluteExpirationRelativeToNow)
-        {
-            cache.Set(key, value, new DistributedCacheEntryOptions() { AbsoluteExpirationRelativeToNow = absoluteExpirationRelativeToNow });
-        }
-        public static void Set<TItem>(this IDistributedCache cache, string key, TItem value, DistributedCacheEntryOptions options)
-        {
-            cache.SetString(key, JsonConvert.SerializeObject(value), options);
-        }
-        public static Task SetAsync<TItem>(this IDistributedCache cache, string key, TItem value, DistributedCacheEntryOptions options, CancellationToken token = default)
-        {
-            return cache.SetStringAsync(key, JsonConvert.SerializeObject(value), options, token);
-        }
-        internal static bool IsTuple(this Type tuple)
-        {
-            if (!tuple.IsGenericType)
-                return false;
-            return typeof(ITuple).IsAssignableFrom(tuple);
         }
     }
 }
