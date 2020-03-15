@@ -11,9 +11,11 @@ namespace Microsoft.Extensions.Caching.Memory
     {
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> _semaphores = new ConcurrentDictionary<int, SemaphoreSlim>();
 
-        public static async Task<T> GetOrCreateAtomicAsync<T>(this IMemoryCache memoryCache, object key, Func<ICacheEntry, Task<T>> factory)
+        public static async Task<T> GetOrCreateAtomicAsync<T>(this IMemoryCache memoryCache, object key, Func<ICacheEntry, Task<T>> factory, Func<T, bool>? notExpiredCheck = null)
         {
-            if (memoryCache.TryGetValue(key, out T value))
+            static bool DefaultCheck(T data) => true;
+            notExpiredCheck ??= DefaultCheck;
+            if (memoryCache.TryGetValue(key, out T value) && notExpiredCheck(value))
                 return value;
 
             var isOwner = false;
@@ -33,7 +35,7 @@ namespace Microsoft.Extensions.Caching.Memory
                            .ConfigureAwait(false); // Await the semaphore!
             try
             {
-                if (!memoryCache.TryGetValue(key, out value))
+                if (!memoryCache.TryGetValue(key, out value) || !notExpiredCheck(value))
                 {
                     var entry = memoryCache.CreateEntry(key);
                     entry.SetValue(value = await factory(entry));
