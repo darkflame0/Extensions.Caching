@@ -19,7 +19,7 @@ namespace Microsoft.Extensions.Caching.Distributed
             }
             try
             {
-                if(typeof(TItem).IsTuple())
+                if (typeof(TItem).IsTuple())
                 {
                     return JsonConvert.DeserializeObject<TItem>(str, _settings);
                 }
@@ -119,6 +119,18 @@ namespace Microsoft.Extensions.Caching.Distributed
         public static void Set<TItem>(this IDistributedCache cache, string key, TItem value, DistributedCacheEntryOptions options)
         {
             cache.SetString(key, JsonConvert.SerializeObject(value), options);
+        }
+        public static Task SetAsync<TItem>(this IDistributedCache cache, string key, TItem value, CancellationToken token = default)
+        {
+            return cache.SetAsync(key, value, new DistributedCacheEntryOptions(), token);
+        }
+        public static Task SetAsync<TItem>(this IDistributedCache cache, string key, TItem value, DateTimeOffset absoluteExpiration, CancellationToken token = default)
+        {
+            return cache.SetAsync(key, value, new DistributedCacheEntryOptions() { AbsoluteExpiration = absoluteExpiration }, token);
+        }
+        public static Task SetAsync<TItem>(this IDistributedCache cache, string key, TItem value, TimeSpan absoluteExpirationRelativeToNow, CancellationToken token = default)
+        {
+            return cache.SetAsync(key, value, new DistributedCacheEntryOptions() { AbsoluteExpirationRelativeToNow = absoluteExpirationRelativeToNow }, token);
         }
         public static Task SetAsync<TItem>(this IDistributedCache cache, string key, TItem value, DistributedCacheEntryOptions options, CancellationToken token = default)
         {
