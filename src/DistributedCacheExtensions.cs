@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
 
 namespace Microsoft.Extensions.Caching.Distributed
 {
@@ -10,6 +11,49 @@ namespace Microsoft.Extensions.Caching.Distributed
     {
         static readonly JsonSerializerSettings _settings = new JsonSerializerSettings() { MissingMemberHandling = MissingMemberHandling.Error };
 
+        private static readonly ConcurrentDictionary<int, SemaphoreSlim> _semaphores = new ConcurrentDictionary<int, SemaphoreSlim>();
+
+        public static async Task<T> GetOrCreateAsync<T>(this IDistributedCache cache, string key, Func<DistributedCacheEntryOptions, Task<T>> factory, Func<T, bool>? notExpiredCheck = null)
+        {
+            static bool DefaultCheck(T data) => true;
+            notExpiredCheck ??= DefaultCheck;
+            var value = await cache.GetAsync<T>(key);
+            if (value != null && notExpiredCheck(value))
+                return value;
+
+            var isOwner = false;
+            var semaphoreKey = (cache, key).GetHashCode();
+            if (!_semaphores.TryGetValue(semaphoreKey, out var semaphore))
+            {
+                SemaphoreSlim? createdSemaphore = null;
+                semaphore = _semaphores.GetOrAdd(semaphoreKey, k => createdSemaphore = new SemaphoreSlim(1)); // Try to add the value, this is not atomic, so multiple semaphores could be created, but just one will be stored!
+
+                if (createdSemaphore != semaphore)
+                    createdSemaphore?.Dispose(); // This semaphore was not the one that made it into the dictionary, will not be used!
+                else
+                    isOwner = true;
+            }
+
+            await semaphore.WaitAsync()
+                           .ConfigureAwait(false); // Await the semaphore!
+            try
+            {
+                value = await cache.GetAsync<T>(key);
+                if (value == null || !notExpiredCheck(value))
+                {
+                    var op = new DistributedCacheEntryOptions();
+                    await cache.SetAsync(key, await factory(op), op);
+                }
+
+                return value;
+            }
+            finally
+            {
+                if (isOwner)
+                    _semaphores.TryRemove(semaphoreKey, out _);
+                semaphore.Release();
+            }
+        }
         public static TItem Get<TItem>(this IDistributedCache cache, string key)
         {
             var str = cache.GetString(key);
@@ -75,33 +119,6 @@ namespace Microsoft.Extensions.Caching.Distributed
             catch (JsonSerializationException)
             {
                 return Create();
-            }
-        }
-        public static async Task<TItem> GetOrCreateAsync<TItem>(this IDistributedCache cache, string key, Func<DistributedCacheEntryOptions, Task<TItem>> factory, CancellationToken token = default)
-        {
-            async Task<TItem> CreateAsync()
-            {
-                var op = new DistributedCacheEntryOptions();
-                var item = await factory(op);
-                _ = cache.SetAsync(key, item, op, token);
-                return item;
-            }
-            var str = await cache.GetStringAsync(key).ConfigureAwait(false);
-            if (str == null)
-            {
-                return await CreateAsync().ConfigureAwait(false);
-            }
-            try
-            {
-                if (typeof(TItem).IsTuple())
-                {
-                    return JsonConvert.DeserializeObject<TItem>(str, _settings);
-                }
-                return JsonConvert.DeserializeObject<TItem>(str);
-            }
-            catch (JsonSerializationException)
-            {
-                return await CreateAsync();
             }
         }
         public static void Set<TItem>(this IDistributedCache cache, string key, TItem value)
