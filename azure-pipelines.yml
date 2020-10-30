@@ -27,7 +27,7 @@ steps:
     includesource: true
     versioningScheme: 'off'
     buildProperties: 'VersionSuffix="$(Build.BuildNumber)"'
-  condition: and(succeeded(), eq(variables['build.sourceBranch'], 'refs/heads/master'))
+  condition: and(succeeded(), startsWith(variables['build.sourceBranch'], 'refs/heads/'))
 
 - task: DotNetCoreCLI@2
   displayName: 'dotnet pack'
@@ -44,5 +44,6 @@ steps:
   inputs:
     command: 'push'
     packagesToPush: '$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg'
-    nuGetFeedType: 'external'
-    publishFeedCredentials: 'myget'
+    nuGetFeedType: 'internal'
+    publishVstsFeed: 'b4525e50-0fb3-4d52-b3e3-2dbc0d169911'
+    allowPackageConflicts: true
