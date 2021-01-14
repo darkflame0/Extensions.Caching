@@ -3,7 +3,6 @@ using Newtonsoft.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
-using System.Collections.Concurrent;
 using StackExchange.Redis;
 using System.Reflection;
 using System.Linq;
@@ -15,7 +14,7 @@ namespace Microsoft.Extensions.Caching.Distributed
 {
     public static class DistributedCacheExtensions
     {
-        static readonly JsonSerializerSettings _settings = new JsonSerializerSettings() { MissingMemberHandling = MissingMemberHandling.Error };
+        static readonly JsonSerializerSettings _settings = new JsonSerializerSettings() { MissingMemberHandling = MissingMemberHandling.Error, ObjectCreationHandling = ObjectCreationHandling.Replace };
         private static readonly object _locker = new object();
         private static volatile ConnectionMultiplexer? _connection;
         private static volatile IDistributedLockFactory? _redlockFactory;
@@ -68,7 +67,7 @@ namespace Microsoft.Extensions.Caching.Distributed
                 {
                     return JsonConvert.DeserializeObject<TItem>(str, _settings);
                 }
-                return JsonConvert.DeserializeObject<TItem>(str);
+                return JsonConvert.DeserializeObject<TItem>(str, _settings);
 
             }
             catch (JsonSerializationException)
@@ -89,7 +88,7 @@ namespace Microsoft.Extensions.Caching.Distributed
                 {
                     return JsonConvert.DeserializeObject<TItem>(str, _settings);
                 }
-                return JsonConvert.DeserializeObject<TItem>(str);
+                return JsonConvert.DeserializeObject<TItem>(str, _settings);
             }
             catch (JsonSerializationException)
             {
@@ -110,7 +109,7 @@ namespace Microsoft.Extensions.Caching.Distributed
         }
         public static void Set<TItem>(this IDistributedCache cache, string key, TItem value, DistributedCacheEntryOptions options)
         {
-            cache.SetString(key, JsonConvert.SerializeObject(value), options);
+            cache.SetString(key, JsonConvert.SerializeObject(value, _settings), options);
         }
         public static Task SetAsync<TItem>(this IDistributedCache cache, string key, TItem value, CancellationToken token = default)
         {
@@ -126,7 +125,7 @@ namespace Microsoft.Extensions.Caching.Distributed
         }
         public static Task SetAsync<TItem>(this IDistributedCache cache, string key, TItem value, DistributedCacheEntryOptions options, CancellationToken token = default)
         {
-            return cache.SetStringAsync(key, JsonConvert.SerializeObject(value), options, token);
+            return cache.SetStringAsync(key, JsonConvert.SerializeObject(value, _settings), options, token);
         }
         internal static bool IsTuple(this Type tuple)
         {
