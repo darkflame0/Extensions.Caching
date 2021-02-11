@@ -11,12 +11,23 @@ namespace Microsoft.Extensions.Caching.Memory
     {
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> _semaphores = new ConcurrentDictionary<int, SemaphoreSlim>();
 
-        public static async Task<T> GetOrCreateAtomicAsync<T>(this IMemoryCache memoryCache, object key, Func<ICacheEntry, Task<T>> factory, Func<T, bool>? notExpiredCheck = null)
+        public static async Task<T> GetOrCreateAtomicAsync<T>(this IMemoryCache memoryCache, object key, Func<ICacheEntry, Task<T>> factory, Func<T, bool>? notExpiredCheck = null, TimeSpan? waitTime = default)
         {
             static bool DefaultCheck(T data) => true;
+            var expired = false;
             notExpiredCheck ??= DefaultCheck;
-            if (memoryCache.TryGetValue(key, out T value) && notExpiredCheck(value))
-                return value;
+            if (memoryCache.TryGetValue(key, out T value))
+            {
+                if (notExpiredCheck(value))
+                {
+                    return value;
+                }
+                else
+                {
+                    expired = true;
+                }
+
+            }
 
             var isOwner = false;
             var semaphoreKey = (memoryCache, key).GetHashCode();
@@ -31,11 +42,19 @@ namespace Microsoft.Extensions.Caching.Memory
                     isOwner = true;
             }
 
-            await semaphore.WaitAsync()
-                           .ConfigureAwait(false); // Await the semaphore!
+            var get = await semaphore.WaitAsync(waitTime ?? Timeout.InfiniteTimeSpan).ConfigureAwait(false); // Await the semaphore!
+            if (!get)
+            {
+                if (expired)
+                {
+                    return value;
+                }
+                throw new OperationCanceledException();
+            }
+
             try
             {
-                if (!memoryCache.TryGetValue(key, out value) || !notExpiredCheck(value))
+                if (!memoryCache.TryGetValue(key, out value) || expired)
                 {
                     var entry = memoryCache.CreateEntry(key);
                     entry.SetValue(value = await factory(entry));

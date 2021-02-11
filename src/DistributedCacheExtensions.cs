@@ -30,18 +30,28 @@ namespace Microsoft.Extensions.Caching.Distributed
             }
         }
 
-        public static async Task<T> GetOrCreateAsync<T>(this IDistributedCache cache, string key, Func<DistributedCacheEntryOptions, Task<T>> factory, Func<T, bool>? notExpiredCheck = null, CancellationToken cancellationToken = default)
+        public static async Task<T> GetOrCreateAsync<T>(this IDistributedCache cache, string key, Func<DistributedCacheEntryOptions, Task<T>> factory, Func<T, bool>? notExpiredCheck = null, TimeSpan? waitTime = default, CancellationToken cancellationToken = default)
         {
             static bool DefaultCheck(T data) => true;
             notExpiredCheck ??= DefaultCheck;
-            var value = await cache.GetAsync<T>(key, token: cancellationToken);
+            var value = await cache.GetAsync<T>(key, token: cancellationToken).ConfigureAwait(false);
             if (value != null && notExpiredCheck(value))
+            {
                 return value;
+            }
             if (_redlockFactory == null)
             {
                 cache.InitLock();
             }
-            using var redLock = await _redlockFactory!.CreateLockAsync($"{key}", TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(10), TimeSpan.FromSeconds(0.5), cancellationToken: cancellationToken);
+            using var redLock = await _redlockFactory!.CreateLockAsync($"{key}", TimeSpan.FromSeconds(5), waitTime ?? Timeout.InfiniteTimeSpan, TimeSpan.FromSeconds(0.5), cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (redLock.Status == RedLockStatus.Conflicted)
+            {
+                if (value != null)
+                {
+                    return value;
+                }
+                throw new OperationCanceledException();
+            }
             if (!redLock.IsAcquired)
             {
                 throw new Exception($"Failed to get lock: Resource:{redLock.Resource} Status: {redLock.Status}");
